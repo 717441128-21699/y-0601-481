@@ -123,12 +123,41 @@ export default function VehicleBoard() {
       }
       map.set(vehicle.id, dateMap);
     }
+
     for (const task of tasks) {
       const dateMap = map.get(task.vehicleId);
       if (!dateMap) continue;
-      const taskDate = task.createdAt.slice(0, 10);
-      if (dateMap.has(taskDate)) {
-        dateMap.get(taskDate)!.push(task);
+
+      const startDateStr = task.createdAt.slice(0, 10);
+      let endDateStr: string;
+
+      const deliveryNode = task.nodes.find((n) => n.nodeType === 'delivery_done');
+      if (deliveryNode?.timestamp) {
+        endDateStr = deliveryNode.timestamp.slice(0, 10);
+      } else if (task.estimatedArrival) {
+        endDateStr = task.estimatedArrival.slice(0, 10);
+      } else {
+        endDateStr = startDateStr;
+      }
+
+      const start = new Date(startDateStr);
+      const end = new Date(endDateStr);
+      let taskStart = start;
+      let taskEnd = end;
+      if (taskEnd < taskStart) {
+        [taskStart, taskEnd] = [taskEnd, taskStart];
+      }
+
+      const scheduleDateSet = new Set(scheduleDates);
+      for (
+        let d = new Date(taskStart);
+        d <= taskEnd;
+        d.setDate(d.getDate() + 1)
+      ) {
+        const dStr = d.toISOString().slice(0, 10);
+        if (scheduleDateSet.has(dStr)) {
+          dateMap.get(dStr)!.push(task);
+        }
       }
     }
     return map;

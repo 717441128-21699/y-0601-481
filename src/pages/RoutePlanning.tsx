@@ -47,6 +47,7 @@ import {
   TASK_STATUS_COLORS,
 } from '@/utils/constants';
 import { formatWeight, formatDistance, formatDuration, formatDateTime, formatMoney } from '@/utils/format';
+import { estimateDistance, estimateDuration, estimateArrival } from '@/utils/distance';
 import type { Order, Vehicle, DispatchTask } from '@/types';
 
 interface SortableOrderCardProps {
@@ -246,22 +247,9 @@ export default function RoutePlanning() {
   };
 
   const calculatePreview = (order: Order, vehicle: Vehicle) => {
-    const pickupAddr = order.pickupAddress || '';
-    const deliveryAddr = order.deliveryAddress || '';
-
-    let baseDistance = 50;
-    if (pickupAddr && deliveryAddr) {
-      const addrDiff = Math.abs(pickupAddr.length - deliveryAddr.length);
-      baseDistance = Math.max(30, 80 + addrDiff * 3 + Math.random() * 60);
-    } else {
-      baseDistance = 80 + Math.random() * 120;
-    }
-
-    const distance = Math.round(baseDistance * 10) / 10;
-    const duration = distance / 60 + 1;
-    const arrival = new Date();
-    arrival.setHours(arrival.getHours() + Math.floor(duration));
-    arrival.setMinutes(arrival.getMinutes() + Math.round((duration % 1) * 60));
+    const distance = estimateDistance(order.pickupAddress, order.deliveryAddress);
+    const duration = estimateDuration(distance, vehicle.vehicleType);
+    const arrival = estimateArrival(duration);
 
     const isOverweight = order.weight > vehicle.capacity;
     const overweightWarning = isOverweight
@@ -271,7 +259,7 @@ export default function RoutePlanning() {
     return {
       estimatedDistance: distance,
       estimatedDuration: duration,
-      estimatedArrival: arrival.toISOString(),
+      estimatedArrival: arrival,
       isOverweight,
       overweightWarning,
     };

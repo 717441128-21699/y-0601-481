@@ -5,8 +5,8 @@ import { generateOrderNo } from '@/utils/format';
 
 interface OrderStore {
   orders: Order[];
-  addOrder: (order: Omit<Order, 'id' | 'orderNo' | 'status' | 'createdAt'>) => void;
-  addOrders: (orders: Array<Omit<Order, 'id' | 'orderNo' | 'status' | 'createdAt'>>) => void;
+  addOrder: (order: Omit<Order, 'id' | 'orderNo' | 'status' | 'createdAt'> & { orderNo?: string }) => Order;
+  addOrders: (orders: Array<Omit<Order, 'id' | 'orderNo' | 'status' | 'createdAt'> & { orderNo?: string }>) => Order[];
   updateOrder: (id: string, updates: Partial<Order>) => void;
   updateOrderStatus: (id: string, status: OrderStatus) => void;
   cancelOrder: (id: string) => void;
@@ -21,23 +21,26 @@ export const useOrderStore = create<OrderStore>((set, get) => ({
   addOrder: (orderData) => {
     const newOrder: Order = {
       ...orderData,
-      id: `o${Date.now()}`,
-      orderNo: generateOrderNo(),
+      id: `o${Date.now()}_${Math.random().toString(36).slice(2, 7)}`,
+      orderNo: orderData.orderNo || generateOrderNo(),
       status: 'pending',
       createdAt: new Date().toISOString(),
     };
     set((state) => ({ orders: [newOrder, ...state.orders] }));
+    return newOrder;
   },
 
   addOrders: (ordersData) => {
+    const now = Date.now();
     const newOrders: Order[] = ordersData.map((orderData, idx) => ({
       ...orderData,
-      id: `o${Date.now()}_${idx}`,
-      orderNo: generateOrderNo(),
+      id: `o${now}_${idx}`,
+      orderNo: orderData.orderNo || generateOrderNo(),
       status: 'pending',
       createdAt: new Date().toISOString(),
     }));
     set((state) => ({ orders: [...newOrders, ...state.orders] }));
+    return newOrders;
   },
 
   updateOrder: (id, updates) => {

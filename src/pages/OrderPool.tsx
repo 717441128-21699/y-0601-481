@@ -453,7 +453,7 @@ export default function OrderPool() {
         const customer = mockCustomers.find(
           (c) => c.name === row.customerName.trim()
         );
-        const orderData: BatchOrderForm = {
+        const orderData: BatchOrderForm & { orderNo?: string } = {
           customerId: customer?.id || `c-${Date.now()}-${idx}`,
           customerName: row.customerName.trim(),
           pickupAddress: row.pickupAddress.trim(),
@@ -466,6 +466,7 @@ export default function OrderPool() {
           weight: row.weight,
           volume: row.volume,
           freight: row.freight,
+          orderNo: row.orderNo?.trim() || undefined,
         };
         addOrder(orderData);
         successCount++;

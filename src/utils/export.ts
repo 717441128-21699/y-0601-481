@@ -4,33 +4,52 @@ import { TASK_STATUS_LABELS, ORDER_STATUS_LABELS } from './constants';
 import { formatDateTime, formatMoney } from './format';
 
 function tasksToExportData(tasks: DispatchTask[]): any[] {
-  return tasks.map((task) => ({
-    '运单号': task.order.orderNo,
-    '客户名称': task.order.customerName,
-    '货物名称': task.order.goodsName,
-    '重量(吨)': task.order.weight,
-    '体积(方)': task.order.volume,
-    '运费(元)': task.order.freight,
-    '装货地址': task.order.pickupAddress,
-    '装货联系人': task.order.pickupContact,
-    '装货电话': task.order.pickupPhone,
-    '卸货地址': task.order.deliveryAddress,
-    '卸货联系人': task.order.deliveryContact,
-    '卸货电话': task.order.deliveryPhone,
-    '车牌号': task.vehicle.plateNumber,
-    '司机姓名': task.driverName,
-    '司机电话': task.driverPhone,
-    '预估里程(km)': task.estimatedDistance,
-    '预计到达': formatDateTime(task.estimatedArrival),
-    '任务状态': TASK_STATUS_LABELS[task.status],
-    '是否签收': task.status === 'completed'
-      ? task.proofImageUrl
-        ? '已签收（有凭证）'
-        : '已签收'
-      : '未签收',
-    '签收凭证': task.proofImageUrl ? '有' : '无',
-    '创建时间': formatDateTime(task.createdAt),
-  }));
+  return tasks.map((task) => {
+    const hasDeliveryDone = task.nodes.some((n) => n.nodeType === 'delivery_done');
+    const isSigned = task.status === 'completed' && task.proofImageUrl;
+
+    let signStatus: string;
+    if (isSigned) {
+      signStatus = '已签收';
+    } else if (task.status === 'completed' && !task.proofImageUrl) {
+      signStatus = '已完成未签收';
+    } else if (hasDeliveryDone) {
+      signStatus = '待签收（已送达）';
+    } else {
+      signStatus = '未签收';
+    }
+
+    let proofStatus: string;
+    if (isSigned) {
+      proofStatus = '已上传回单';
+    } else {
+      proofStatus = '未上传回单';
+    }
+
+    return {
+      '运单号': task.order.orderNo,
+      '客户名称': task.order.customerName,
+      '货物名称': task.order.goodsName,
+      '重量(吨)': task.order.weight,
+      '体积(方)': task.order.volume,
+      '运费(元)': task.order.freight,
+      '装货地址': task.order.pickupAddress,
+      '装货联系人': task.order.pickupContact,
+      '装货电话': task.order.pickupPhone,
+      '卸货地址': task.order.deliveryAddress,
+      '卸货联系人': task.order.deliveryContact,
+      '卸货电话': task.order.deliveryPhone,
+      '车牌号': task.vehicle.plateNumber,
+      '司机姓名': task.driverName,
+      '司机电话': task.driverPhone,
+      '预估里程(km)': task.estimatedDistance,
+      '预计到达': formatDateTime(task.estimatedArrival),
+      '任务状态': TASK_STATUS_LABELS[task.status],
+      '签收状态': signStatus,
+      '签收凭证': proofStatus,
+      '创建时间': formatDateTime(task.createdAt),
+    };
+  });
 }
 
 function ordersToExportData(orders: Order[]): any[] {
