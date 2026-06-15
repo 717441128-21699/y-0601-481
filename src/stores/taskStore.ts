@@ -7,7 +7,7 @@ import { useVehicleStore } from './vehicleStore';
 
 interface TaskStore {
   tasks: DispatchTask[];
-  createTask: (orderId: string, vehicleId: string) => DispatchTask | null;
+  createTask: (orderId: string, vehicleId: string, estimated?: { distance?: number; duration?: number; arrival?: string }) => DispatchTask | null;
   updateTaskStatus: (id: string, status: TaskStatus) => void;
   updateTask: (id: string, updates: Partial<DispatchTask>) => void;
   addTaskNode: (taskId: string, nodeType: NodeType, location: string, remark?: string) => void;
@@ -21,16 +21,16 @@ interface TaskStore {
 export const useTaskStore = create<TaskStore>((set, get) => ({
   tasks: mockTasks,
 
-  createTask: (orderId, vehicleId) => {
+  createTask: (orderId, vehicleId, estimated) => {
     const order = useOrderStore.getState().getOrderById(orderId);
     const vehicle = useVehicleStore.getState().getVehicleById(vehicleId);
 
     if (!order || !vehicle) return null;
     if (!vehicle.driverName || !vehicle.driverId || !vehicle.driverPhone) return null;
 
-    const distance = estimateDistance(order.pickupAddress, order.deliveryAddress);
-    const duration = estimateDuration(distance, vehicle.vehicleType);
-    const arrival = estimateArrival(duration);
+    const distance = estimated?.distance ?? estimateDistance(order.pickupAddress, order.deliveryAddress);
+    const duration = estimated?.duration ?? estimateDuration(distance, vehicle.vehicleType);
+    const arrival = estimated?.arrival ?? estimateArrival(duration);
 
     const taskId = `t${Date.now()}`;
 

@@ -302,14 +302,18 @@ export default function RoutePlanning() {
   };
 
   const handleConfirmAssign = () => {
-    if (!previewOrder || !previewVehicle) return;
+    if (!previewOrder || !previewVehicle || !previewData) return;
 
-    if (previewData?.isOverweight) {
+    if (previewData.isOverweight) {
       showToast(previewData.overweightWarning || '超重，无法分配', 'error');
       return;
     }
 
-    const task = createTask(previewOrder.id, previewVehicle.id);
+    const task = createTask(previewOrder.id, previewVehicle.id, {
+      distance: previewData.estimatedDistance,
+      duration: previewData.estimatedDuration,
+      arrival: previewData.estimatedArrival,
+    });
     if (task) {
       showToast(
         `分配成功！${task.order.orderNo} → ${task.vehicle.plateNumber}，里程 ${formatDistance(task.estimatedDistance)}`,

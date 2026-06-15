@@ -249,15 +249,15 @@ export default function OrderPool() {
         const jsonData = XLSX.utils.sheet_to_json(worksheet) as any[];
 
         const parsedData: ImportRow[] = jsonData.map((row, idx) => ({
-          orderNo: String(row['运单号'] || row['orderNo'] || row['运单号(可选)'] || ''),
-          customerName: String(row['客户名称'] || row['customerName'] || ''),
-          pickupAddress: String(row['装货地址'] || row['pickupAddress'] || ''),
-          pickupContact: String(row['装货联系人'] || row['pickupContact'] || ''),
-          pickupPhone: String(row['装货电话'] || row['pickupPhone'] || ''),
-          deliveryAddress: String(row['卸货地址'] || row['deliveryAddress'] || ''),
-          deliveryContact: String(row['卸货联系人'] || row['deliveryContact'] || ''),
-          deliveryPhone: String(row['卸货电话'] || row['deliveryPhone'] || ''),
-          goodsName: String(row['货物名称'] || row['goodsName'] || ''),
+          orderNo: String(row['运单号'] || row['orderNo'] || row['运单号(可选)'] || '').trim(),
+          customerName: String(row['客户名称'] || row['customerName'] || '').trim(),
+          pickupAddress: String(row['装货地址'] || row['pickupAddress'] || '').trim(),
+          pickupContact: String(row['装货联系人'] || row['pickupContact'] || '').trim(),
+          pickupPhone: String(row['装货电话'] || row['pickupPhone'] || '').trim(),
+          deliveryAddress: String(row['卸货地址'] || row['deliveryAddress'] || '').trim(),
+          deliveryContact: String(row['卸货联系人'] || row['deliveryContact'] || '').trim(),
+          deliveryPhone: String(row['卸货电话'] || row['deliveryPhone'] || '').trim(),
+          goodsName: String(row['货物名称'] || row['goodsName'] || '').trim(),
           weight: Number(row['重量(吨)'] || row['weight'] || 0),
           volume: Number(row['体积(方)'] || row['volume'] || 0),
           freight: Number(row['运费(元)'] || row['freight'] || 0),
@@ -298,7 +298,7 @@ export default function OrderPool() {
           validation.issues.push({
             type: 'error',
             field: 'orderNo',
-            message: `运单号 ${row.orderNo} 已存在于系统中`,
+            message: `运单号「${row.orderNo}」已存在于系统中`,
           });
           validation.isDuplicate = true;
         }
@@ -309,56 +309,56 @@ export default function OrderPool() {
         }
       }
 
-      if (!row.customerName?.trim()) {
+      if (!row.customerName) {
         validation.issues.push({
           type: 'error',
           field: 'customerName',
           message: '客户名称不能为空',
         });
       }
-      if (!row.pickupAddress?.trim()) {
+      if (!row.pickupAddress) {
         validation.issues.push({
           type: 'error',
           field: 'pickupAddress',
           message: '装货地址不能为空',
         });
       }
-      if (!row.pickupContact?.trim()) {
+      if (!row.pickupContact) {
         validation.issues.push({
           type: 'error',
           field: 'pickupContact',
           message: '装货联系人不能为空',
         });
       }
-      if (!row.pickupPhone?.trim()) {
+      if (!row.pickupPhone) {
         validation.issues.push({
           type: 'error',
           field: 'pickupPhone',
           message: '装货电话不能为空',
         });
       }
-      if (!row.deliveryAddress?.trim()) {
+      if (!row.deliveryAddress) {
         validation.issues.push({
           type: 'error',
           field: 'deliveryAddress',
           message: '卸货地址不能为空',
         });
       }
-      if (!row.deliveryContact?.trim()) {
+      if (!row.deliveryContact) {
         validation.issues.push({
           type: 'error',
           field: 'deliveryContact',
           message: '卸货联系人不能为空',
         });
       }
-      if (!row.deliveryPhone?.trim()) {
+      if (!row.deliveryPhone) {
         validation.issues.push({
           type: 'error',
           field: 'deliveryPhone',
           message: '卸货电话不能为空',
         });
       }
-      if (!row.goodsName?.trim()) {
+      if (!row.goodsName) {
         validation.issues.push({
           type: 'error',
           field: 'goodsName',
@@ -451,22 +451,22 @@ export default function OrderPool() {
     validRows.forEach((row, idx) => {
       try {
         const customer = mockCustomers.find(
-          (c) => c.name === row.customerName.trim()
+          (c) => c.name === row.customerName
         );
         const orderData: BatchOrderForm & { orderNo?: string } = {
           customerId: customer?.id || `c-${Date.now()}-${idx}`,
-          customerName: row.customerName.trim(),
-          pickupAddress: row.pickupAddress.trim(),
-          pickupContact: row.pickupContact.trim(),
-          pickupPhone: row.pickupPhone.trim(),
-          deliveryAddress: row.deliveryAddress.trim(),
-          deliveryContact: row.deliveryContact.trim(),
-          deliveryPhone: row.deliveryPhone.trim(),
-          goodsName: row.goodsName.trim(),
+          customerName: row.customerName,
+          pickupAddress: row.pickupAddress,
+          pickupContact: row.pickupContact,
+          pickupPhone: row.pickupPhone,
+          deliveryAddress: row.deliveryAddress,
+          deliveryContact: row.deliveryContact,
+          deliveryPhone: row.deliveryPhone,
+          goodsName: row.goodsName,
           weight: row.weight,
           volume: row.volume,
           freight: row.freight,
-          orderNo: row.orderNo?.trim() || undefined,
+          orderNo: row.orderNo || undefined,
         };
         addOrder(orderData);
         successCount++;
