@@ -25,6 +25,8 @@ import {
   Eye,
   FileImage,
   Info,
+  AlertCircle,
+  FileCheck,
 } from 'lucide-react';
 import { useTaskStore } from '@/stores/taskStore';
 import { useToast } from '@/components/Toast/Toast';
@@ -248,7 +250,11 @@ function CompleteSignModal({ task, onClose, onConfirm }: CompleteSignModalProps)
   };
 
   const handleConfirm = () => {
-    onConfirm(proofImage || undefined);
+    if (!proofImage) {
+      showToast('请先上传签收凭证后再确认完成', 'error');
+      return;
+    }
+    onConfirm(proofImage);
   };
 
   return (
@@ -352,12 +358,12 @@ function CompleteSignModal({ task, onClose, onConfirm }: CompleteSignModalProps)
             </div>
 
             {!proofImage && (
-              <div className="flex items-start gap-2 p-3 bg-warning-50 rounded-lg border border-warning-100">
-                <Info className="w-4 h-4 text-warning-600 mt-0.5 flex-shrink-0" />
-                <div className="text-xs text-warning-700">
-                  <p className="font-medium mb-0.5">建议上传签收凭证</p>
+              <div className="flex items-start gap-2 p-3 bg-danger-50 rounded-lg border border-danger-100">
+                <AlertCircle className="w-4 h-4 text-danger-600 mt-0.5 flex-shrink-0" />
+                <div className="text-xs text-danger-700">
+                  <p className="font-medium mb-0.5">请先上传签收凭证</p>
                   <p className="opacity-80">
-                    上传签收凭证可作为客户确认收货的法律依据，方便后续对账结算。
+                    完成签收前必须上传回单照片，作为客户确认收货的法律依据。
                   </p>
                 </div>
               </div>
@@ -369,10 +375,11 @@ function CompleteSignModal({ task, onClose, onConfirm }: CompleteSignModalProps)
             </button>
             <button
               onClick={handleConfirm}
-              className="btn-success flex-1 gap-2"
+              disabled={!proofImage}
+              className={`flex-1 gap-2 ${proofImage ? 'btn-success' : 'btn-disabled'}`}
             >
-              <CheckCircle2 className="w-4 h-4" />
-              {proofImage ? '确认签收' : '确认签收（无凭证）'}
+              <FileCheck className="w-4 h-4" />
+              {proofImage ? '确认签收完成' : '请先上传回单'}
             </button>
           </div>
         </div>
@@ -425,6 +432,7 @@ interface TaskDetailModalProps {
 
 function TaskDetailModal({ task, onClose, onViewSheet }: TaskDetailModalProps) {
   const [imagePreview, setImagePreview] = useState<string | null>(null);
+  const hasDeliveryDone = task.nodes.some((n) => n.nodeType === 'delivery_done');
 
   return (
     <>
@@ -686,13 +694,20 @@ function TaskDetailModal({ task, onClose, onViewSheet }: TaskDetailModalProps) {
               </div>
             </div>
 
-            {task.status === 'completed' && (
-              <div>
-                <h4 className="text-sm font-semibold text-gray-700 mb-3 flex items-center gap-2">
-                  <FileImage className="w-4 h-4 text-primary-500" />
-                  签收凭证
-                </h4>
-                {task.proofImageUrl ? (
+            <div>
+              <h4 className="text-sm font-semibold text-gray-700 mb-3 flex items-center gap-2">
+                <FileCheck className="w-4 h-4 text-primary-500" />
+                签收状态
+              </h4>
+              {task.proofImageUrl ? (
+                <div className="space-y-3">
+                  <div className="flex items-center gap-2 p-3 bg-success-50 rounded-lg border border-success-100">
+                    <CheckCircle2 className="w-5 h-5 text-success-600 flex-shrink-0" />
+                    <div>
+                      <p className="text-sm font-medium text-success-700">已签收（有凭证）</p>
+                      <p className="text-xs text-success-600 opacity-80">回单照片已上传，可作为对账依据</p>
+                    </div>
+                  </div>
                   <div className="relative group">
                     <img
                       src={task.proofImageUrl}
@@ -700,36 +715,63 @@ function TaskDetailModal({ task, onClose, onViewSheet }: TaskDetailModalProps) {
                       className="w-full max-h-80 object-contain bg-gray-100 rounded-lg border border-gray-200 cursor-pointer"
                       onClick={() => setImagePreview(task.proofImageUrl)}
                     />
-                    <div className="absolute top-3 right-3">
+                    <div className="absolute top-3 right-3 flex gap-2">
                       <button
                         onClick={() => setImagePreview(task.proofImageUrl)}
                         className="p-2 bg-white/90 backdrop-blur rounded-lg shadow-md hover:bg-white transition-colors"
+                        title="预览大图"
                       >
                         <Eye className="w-4 h-4 text-gray-600" />
                       </button>
-                    </div>
-                    <div
-                      className="absolute bottom-3 left-3 flex items-center gap-1 px-2 py-1 bg-success-500 text-white rounded text-xs"
-                    >
-                      <CheckCircle2 className="w-3 h-3" />
-                      已上传签收凭证
-                    </div>
-                  </div>
-                ) : (
-                  <div className="flex items-start gap-3 p-4 bg-warning-50 rounded-lg border border-warning-100">
-                    <Info className="w-5 h-5 text-warning-500 mt-0.5 flex-shrink-0" />
-                    <div>
-                      <p className="text-sm font-medium text-warning-700">
-                        该任务未上传签收凭证
-                      </p>
-                      <p className="text-xs text-warning-600 mt-0.5 opacity-80">
-                        建议在完成签收时上传签收单、回单等凭证文件
-                      </p>
+                      <a
+                        href={task.proofImageUrl}
+                        download={`签收凭证_${task.order.orderNo}.png`}
+                        className="p-2 bg-white/90 backdrop-blur rounded-lg shadow-md hover:bg-white transition-colors"
+                        title="下载图片"
+                      >
+                        <Download className="w-4 h-4 text-gray-600" />
+                      </a>
                     </div>
                   </div>
-                )}
-              </div>
-            )}
+                </div>
+              ) : hasDeliveryDone ? (
+                <div className="flex items-start gap-3 p-4 bg-warning-50 rounded-lg border border-warning-100">
+                  <Clock className="w-5 h-5 text-warning-500 mt-0.5 flex-shrink-0" />
+                  <div>
+                    <p className="text-sm font-medium text-warning-700">
+                      已送达，待签收
+                    </p>
+                    <p className="text-xs text-warning-600 mt-0.5 opacity-80">
+                      货物已送达，请上传签收凭证完成最终签收
+                    </p>
+                  </div>
+                </div>
+              ) : task.status === 'completed' ? (
+                <div className="flex items-start gap-3 p-4 bg-danger-50 rounded-lg border border-danger-100">
+                  <AlertCircle className="w-5 h-5 text-danger-500 mt-0.5 flex-shrink-0" />
+                  <div>
+                    <p className="text-sm font-medium text-danger-700">
+                      已完成但无签收凭证
+                    </p>
+                    <p className="text-xs text-danger-600 mt-0.5 opacity-80">
+                      该任务缺少签收凭证，可能影响后续对账结算
+                    </p>
+                  </div>
+                </div>
+              ) : (
+                <div className="flex items-start gap-3 p-4 bg-gray-50 rounded-lg border border-gray-100">
+                  <Info className="w-5 h-5 text-gray-400 mt-0.5 flex-shrink-0" />
+                  <div>
+                    <p className="text-sm font-medium text-gray-600">
+                      尚未送达
+                    </p>
+                    <p className="text-xs text-gray-500 mt-0.5 opacity-80">
+                      货物送达后可上传签收凭证完成签收
+                    </p>
+                  </div>
+                </div>
+              )}
+            </div>
           </div>
           <div className="p-5 border-t border-gray-100 bg-gray-50 rounded-b-xl flex gap-3 flex-shrink-0">
             <button onClick={onClose} className="btn-secondary flex-1">
@@ -800,22 +842,36 @@ function TaskCard({
   const [expanded, setExpanded] = useState(false);
 
   const completedNodeTypes = task.nodes.map((n) => n.nodeType);
+  const hasDeliveryDone = completedNodeTypes.includes('delivery_done');
+  const isSigned = task.status === 'completed' && task.proofImageUrl;
 
   return (
     <div className="card p-5 card-hover">
       <div className="flex items-start justify-between mb-4">
         <div className="flex-1 cursor-pointer" onClick={onViewDetail}>
-          <div className="flex items-center gap-3">
+          <div className="flex items-center gap-3 flex-wrap">
             <span className="text-lg font-bold text-gray-900 hover:text-primary-600 transition-colors">
               {task.order.orderNo}
             </span>
             <span className={TASK_STATUS_COLORS[task.status]}>
               {TASK_STATUS_LABELS[task.status]}
             </span>
-            {task.status === 'completed' && task.proofImageUrl && (
+            {isSigned && (
               <span className="badge-success flex items-center gap-1">
-                <FileImage className="w-3 h-3" />
-                有凭证
+                <FileCheck className="w-3 h-3" />
+                已签收
+              </span>
+            )}
+            {hasDeliveryDone && task.status !== 'completed' && (
+              <span className="badge-warning flex items-center gap-1">
+                <Clock className="w-3 h-3" />
+                待签收
+              </span>
+            )}
+            {task.status === 'completed' && !task.proofImageUrl && (
+              <span className="badge-danger flex items-center gap-1">
+                <AlertCircle className="w-3 h-3" />
+                无凭证
               </span>
             )}
             <button

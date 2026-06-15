@@ -30,6 +30,10 @@ import {
   Weight,
   AlertCircle,
   GripVertical,
+  X,
+  Check,
+  Calendar,
+  AlertTriangle,
 } from 'lucide-react';
 import { useOrderStore } from '@/stores/orderStore';
 import { useVehicleStore } from '@/stores/vehicleStore';
@@ -212,6 +216,16 @@ export default function RoutePlanning() {
   const [activeOrderId, setActiveOrderId] = useState<string | null>(null);
   const [overVehicleId, setOverVehicleId] = useState<string | null>(null);
   const [, setPendingOrdersLocal] = useState<Order[]>([]);
+  const [showPreviewModal, setShowPreviewModal] = useState(false);
+  const [previewOrder, setPreviewOrder] = useState<Order | null>(null);
+  const [previewVehicle, setPreviewVehicle] = useState<Vehicle | null>(null);
+  const [previewData, setPreviewData] = useState<{
+    estimatedDistance: number;
+    estimatedDuration: number;
+    estimatedArrival: string;
+    isOverweight: boolean;
+    overweightWarning?: string;
+  } | null>(null);
 
   const pendingOrders = orders.filter((o) => o.status === 'pending');
   const idleVehicles = vehicles.filter((v) => v.status === 'idle');
@@ -229,6 +243,38 @@ export default function RoutePlanning() {
     if (id.startsWith('order-')) {
       setActiveOrderId(id.replace('order-', ''));
     }
+  };
+
+  const calculatePreview = (order: Order, vehicle: Vehicle) => {
+    const pickupAddr = order.pickupAddress || '';
+    const deliveryAddr = order.deliveryAddress || '';
+
+    let baseDistance = 50;
+    if (pickupAddr && deliveryAddr) {
+      const addrDiff = Math.abs(pickupAddr.length - deliveryAddr.length);
+      baseDistance = Math.max(30, 80 + addrDiff * 3 + Math.random() * 60);
+    } else {
+      baseDistance = 80 + Math.random() * 120;
+    }
+
+    const distance = Math.round(baseDistance * 10) / 10;
+    const duration = distance / 60 + 1;
+    const arrival = new Date();
+    arrival.setHours(arrival.getHours() + Math.floor(duration));
+    arrival.setMinutes(arrival.getMinutes() + Math.round((duration % 1) * 60));
+
+    const isOverweight = order.weight > vehicle.capacity;
+    const overweightWarning = isOverweight
+      ? `订单重量 ${formatWeight(order.weight)} 超过车辆载重 ${formatWeight(vehicle.capacity)}`
+      : undefined;
+
+    return {
+      estimatedDistance: distance,
+      estimatedDuration: duration,
+      estimatedArrival: arrival.toISOString(),
+      isOverweight,
+      overweightWarning,
+    };
   };
 
   const handleDragEnd = (event: DragEndEvent) => {
@@ -260,15 +306,22 @@ export default function RoutePlanning() {
       return;
     }
 
-    if (order.weight > vehicle.capacity) {
-      showToast(
-        `超重！订单 ${order.orderNo} 重量 ${formatWeight(order.weight)} 超过车辆载重 ${formatWeight(vehicle.capacity)}`,
-        'error'
-      );
+    const preview = calculatePreview(order, vehicle);
+    setPreviewOrder(order);
+    setPreviewVehicle(vehicle);
+    setPreviewData(preview);
+    setShowPreviewModal(true);
+  };
+
+  const handleConfirmAssign = () => {
+    if (!previewOrder || !previewVehicle) return;
+
+    if (previewData?.isOverweight) {
+      showToast(previewData.overweightWarning || '超重，无法分配', 'error');
       return;
     }
 
-    const task = createTask(orderId, vehicleId);
+    const task = createTask(previewOrder.id, previewVehicle.id);
     if (task) {
       showToast(
         `分配成功！${task.order.orderNo} → ${task.vehicle.plateNumber}，里程 ${formatDistance(task.estimatedDistance)}`,
@@ -278,6 +331,18 @@ export default function RoutePlanning() {
     } else {
       showToast('任务创建失败，请检查司机信息是否完整', 'error');
     }
+
+    setShowPreviewModal(false);
+    setPreviewOrder(null);
+    setPreviewVehicle(null);
+    setPreviewData(null);
+  };
+
+  const handleCancelPreview = () => {
+    setShowPreviewModal(false);
+    setPreviewOrder(null);
+    setPreviewVehicle(null);
+    setPreviewData(null);
   };
 
   const handleDragOver = (event: { active: any; over: any }) => {
@@ -465,6 +530,184 @@ export default function RoutePlanning() {
           ) : null}
         </DragOverlay>
       </DndContext>
+
+      {showPreviewModal && previewOrder && previewVehicle && previewData && (
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 animate-fade-in">
+          <div className="bg-white rounded-xl shadow-2xl w-[650px] overflow-hidden animate-slide-in">
+            <div className="px-6 py-4 border-b border-gray-100 flex items-center justify-between bg-primary-50/30">
+              <div className="flex items-center gap-2">
+                <Route className="w-5 h-5 text-primary-600" />
+                <h2 className="text-lg font-semibold text-gray-900">派车预览确认</h2>
+              </div>
+              <button
+                onClick={handleCancelPreview}
+                className="p-1 rounded-md hover:bg-gray-100 text-gray-500"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            <div className="p-6 space-y-5">
+              {previewData.isOverweight && (
+                <div className="bg-danger-50 border border-danger-200 rounded-xl p-4 flex items-start gap-3">
+                  <AlertTriangle className="w-5 h-5 text-danger-600 flex-shrink-0 mt-0.5" />
+                  <div>
+                    <p className="text-sm font-semibold text-danger-800">超重警告</p>
+                    <p className="text-xs text-danger-700 mt-0.5">
+                      {previewData.overweightWarning}
+                    </p>
+                  </div>
+                </div>
+              )}
+
+              <div className="grid grid-cols-2 gap-5">
+                <div className="space-y-3">
+                  <h3 className="text-sm font-semibold text-gray-700 flex items-center gap-2">
+                    <Package className="w-4 h-4 text-primary-500" />
+                    运单信息
+                  </h3>
+                  <div className="bg-gray-50 rounded-xl p-4 space-y-3">
+                    <div className="flex items-center justify-between">
+                      <p className="text-xs text-gray-500">运单号</p>
+                      <p className="text-sm font-semibold text-primary-600">{previewOrder.orderNo}</p>
+                    </div>
+                    <div className="flex items-center justify-between">
+                      <p className="text-xs text-gray-500">客户名称</p>
+                      <p className="text-sm font-medium text-gray-900">{previewOrder.customerName}</p>
+                    </div>
+                    <div className="flex items-center justify-between">
+                      <p className="text-xs text-gray-500">货物名称</p>
+                      <p className="text-sm text-gray-700">{previewOrder.goodsName}</p>
+                    </div>
+                    <div className="flex items-center justify-between">
+                      <p className="text-xs text-gray-500">重量</p>
+                      <p className={`text-sm font-medium ${previewData.isOverweight ? 'text-danger-600' : 'text-gray-700'}`}>
+                        {formatWeight(previewOrder.weight)}
+                      </p>
+                    </div>
+                    <div className="flex items-center justify-between">
+                      <p className="text-xs text-gray-500">运费</p>
+                      <p className="text-sm font-semibold text-accent-600">{formatMoney(previewOrder.freight)}</p>
+                    </div>
+                  </div>
+                </div>
+
+                <div className="space-y-3">
+                  <h3 className="text-sm font-semibold text-gray-700 flex items-center gap-2">
+                    <Truck className="w-4 h-4 text-success-500" />
+                    车辆信息
+                  </h3>
+                  <div className="bg-gray-50 rounded-xl p-4 space-y-3">
+                    <div className="flex items-center justify-between">
+                      <p className="text-xs text-gray-500">车牌号</p>
+                      <p className="text-sm font-bold text-gray-900">{previewVehicle.plateNumber}</p>
+                    </div>
+                    <div className="flex items-center justify-between">
+                      <p className="text-xs text-gray-500">车型</p>
+                      <p className="text-sm text-gray-700">{VEHICLE_TYPE_LABELS[previewVehicle.vehicleType]}</p>
+                    </div>
+                    <div className="flex items-center justify-between">
+                      <p className="text-xs text-gray-500">载重</p>
+                      <p className={`text-sm font-medium ${previewData.isOverweight ? 'text-danger-600' : 'text-gray-700'}`}>
+                        {formatWeight(previewVehicle.capacity)}
+                      </p>
+                    </div>
+                    <div className="flex items-center justify-between">
+                      <p className="text-xs text-gray-500">司机</p>
+                      <p className="text-sm font-medium text-gray-900">{previewVehicle.driverName}</p>
+                    </div>
+                    <div className="flex items-center justify-between">
+                      <p className="text-xs text-gray-500">联系电话</p>
+                      <p className="text-sm text-gray-700">{previewVehicle.driverPhone}</p>
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              <div className="bg-gray-50 rounded-xl p-4 space-y-3">
+                <h3 className="text-sm font-semibold text-gray-700 flex items-center gap-2">
+                  <MapPin className="w-4 h-4 text-success-500" />
+                  运输路线
+                </h3>
+                <div className="space-y-2">
+                  <div className="flex items-start gap-2">
+                    <div className="w-6 h-6 rounded-full bg-success-100 flex items-center justify-center flex-shrink-0 mt-0.5">
+                      <span className="w-2 h-2 rounded-full bg-success-600" />
+                    </div>
+                    <div>
+                      <p className="text-xs text-gray-500">装货地</p>
+                      <p className="text-sm text-gray-700">{previewOrder.pickupAddress}</p>
+                      {previewOrder.pickupContact && (
+                        <p className="text-xs text-gray-500 mt-0.5">
+                          {previewOrder.pickupContact} · {previewOrder.pickupPhone}
+                        </p>
+                      )}
+                    </div>
+                  </div>
+                  <div className="flex items-start gap-2 ml-3">
+                    <div className="w-px h-4 bg-gray-300" />
+                  </div>
+                  <div className="flex items-start gap-2">
+                    <div className="w-6 h-6 rounded-full bg-danger-100 flex items-center justify-center flex-shrink-0 mt-0.5">
+                      <span className="w-2 h-2 rounded-full bg-danger-600" />
+                    </div>
+                    <div>
+                      <p className="text-xs text-gray-500">卸货地</p>
+                      <p className="text-sm text-gray-700">{previewOrder.deliveryAddress}</p>
+                      {previewOrder.deliveryContact && (
+                        <p className="text-xs text-gray-500 mt-0.5">
+                          {previewOrder.deliveryContact} · {previewOrder.deliveryPhone}
+                        </p>
+                      )}
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              <div className="grid grid-cols-3 gap-4">
+                <div className="bg-primary-50 rounded-xl p-4 text-center">
+                  <Route className="w-5 h-5 text-primary-500 mx-auto mb-1" />
+                  <p className="text-xs text-gray-500">预估里程</p>
+                  <p className="text-xl font-bold text-primary-600 mt-0.5">
+                    {formatDistance(previewData.estimatedDistance)}
+                  </p>
+                </div>
+                <div className="bg-gray-50 rounded-xl p-4 text-center">
+                  <Clock className="w-5 h-5 text-gray-500 mx-auto mb-1" />
+                  <p className="text-xs text-gray-500">预估时长</p>
+                  <p className="text-xl font-bold text-gray-800 mt-0.5">
+                    {formatDuration(previewData.estimatedDuration)}
+                  </p>
+                </div>
+                <div className="bg-accent-50 rounded-xl p-4 text-center">
+                  <Calendar className="w-5 h-5 text-accent-500 mx-auto mb-1" />
+                  <p className="text-xs text-gray-500">预计到达</p>
+                  <p className="text-sm font-bold text-accent-600 mt-0.5">
+                    {formatDateTime(previewData.estimatedArrival)}
+                  </p>
+                </div>
+              </div>
+            </div>
+
+            <div className="px-6 py-4 border-t border-gray-100 bg-gray-50/50 flex items-center justify-end gap-3">
+              <button
+                onClick={handleCancelPreview}
+                className="btn-secondary"
+              >
+                取消
+              </button>
+              <button
+                onClick={handleConfirmAssign}
+                disabled={previewData.isOverweight}
+                className={previewData.isOverweight ? 'btn-disabled gap-2' : 'btn-primary gap-2'}
+              >
+                <Check className="w-4 h-4" />
+                确认派车
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

@@ -25,12 +25,14 @@ import {
   FileSpreadsheet,
   FileText,
   RefreshCw,
+  Loader2,
+  FileCheck,
 } from 'lucide-react';
 import { useTaskStore } from '@/stores/taskStore';
 import { useOrderStore } from '@/stores/orderStore';
 import { useVehicleStore } from '@/stores/vehicleStore';
 import { useExceptionStore } from '@/stores/exceptionStore';
-import type { CustomerStat, VehicleStat } from '@/types';
+import type { CustomerStat, VehicleStat, DispatchTask } from '@/types';
 import { formatMoney, formatDistance } from '@/utils/format';
 import { exportDispatchList } from '@/utils/export';
 
@@ -45,11 +47,16 @@ export default function StatisticsReport() {
 
   const stats = useMemo(() => {
     const notCancelledOrders = orders.filter((o) => o.status !== 'cancelled');
-    const completedOrders = orders.filter(
-      (o) => o.status === 'completed' || o.status === 'delivered'
+
+    const signedTasks = tasks.filter(
+      (t) => t.status === 'completed' && t.proofImageUrl
     );
-    const completedTasks = tasks.filter((t) => t.status === 'completed');
-    const totalFreight = completedTasks.reduce(
+    const inProgressTasks = tasks.filter((t) => {
+      const hasDeliveryDone = t.nodes.some((n) => n.nodeType === 'delivery_done');
+      return hasDeliveryDone && !(t.status === 'completed' && t.proofImageUrl);
+    });
+
+    const totalFreight = signedTasks.reduce(
       (sum, t) => sum + (t.order.freight || 0),
       0
     );
@@ -58,7 +65,7 @@ export default function StatisticsReport() {
       0
     );
 
-    const onTimeTasks = completedTasks.filter((t) => {
+    const onTimeTasks = signedTasks.filter((t) => {
       const doneNode = t.nodes.find((n) => n.nodeType === 'delivery_done');
       if (doneNode) {
         return new Date(doneNode.timestamp) <= new Date(t.estimatedArrival);
@@ -66,8 +73,8 @@ export default function StatisticsReport() {
       return true;
     });
     const onTimeRate =
-      completedTasks.length > 0
-        ? Math.round((onTimeTasks.length / completedTasks.length) * 1000) / 10
+      signedTasks.length > 0
+        ? Math.round((onTimeTasks.length / signedTasks.length) * 1000) / 10
         : 0;
 
     const pendingExceptions = exceptions.filter(
@@ -76,7 +83,8 @@ export default function StatisticsReport() {
 
     return {
       totalOrders: notCancelledOrders.length,
-      completedOrders: completedOrders.length,
+      inProgressOrders: inProgressTasks.length,
+      completedOrders: signedTasks.length,
       totalFreight: totalFreight,
       totalFreightAll: totalFreightAll,
       onTimeRate: onTimeRate,
@@ -86,6 +94,10 @@ export default function StatisticsReport() {
 
   const byCustomerStats = useMemo<CustomerStat[]>(() => {
     const customerMap = new Map<string, CustomerStat>();
+    const orderTaskMap = new Map<string, DispatchTask>();
+    for (const task of tasks) {
+      orderTaskMap.set(task.orderId, task);
+    }
 
     for (const order of orders) {
       if (order.status === 'cancelled') continue;
@@ -96,6 +108,7 @@ export default function StatisticsReport() {
           customerId: order.customerId,
           customerName: order.customerName,
           orderCount: 0,
+          inProgressCount: 0,
           completedCount: 0,
           totalFreight: 0,
           completionRate: 0,
@@ -104,11 +117,18 @@ export default function StatisticsReport() {
       const stat = customerMap.get(key)!;
       stat.orderCount += 1;
       stat.totalFreight += order.freight || 0;
-      if (
-        order.status === 'completed' ||
-        order.status === 'delivered'
-      ) {
-        stat.completedCount += 1;
+
+      const task = orderTaskMap.get(order.id);
+      if (task) {
+        const isSigned = task.status === 'completed' && task.proofImageUrl;
+        const hasDeliveryDone = task.nodes.some(
+          (n) => n.nodeType === 'delivery_done'
+        );
+        if (isSigned) {
+          stat.completedCount += 1;
+        } else if (hasDeliveryDone) {
+          stat.inProgressCount += 1;
+        }
       }
     }
 
@@ -121,7 +141,7 @@ export default function StatisticsReport() {
             : 0,
       }))
       .sort((a, b) => b.totalFreight - a.totalFreight);
-  }, [orders]);
+  }, [orders, tasks]);
 
   const byVehicleStats = useMemo<VehicleStat[]>(() => {
     const vehicleMap = new Map<string, VehicleStat>();
@@ -131,6 +151,7 @@ export default function StatisticsReport() {
         vehicleId: vehicle.id,
         plateNumber: vehicle.plateNumber,
         taskCount: 0,
+        inProgressCount: 0,
         completedCount: 0,
         totalDistance: 0,
         totalFreight: 0,
@@ -145,6 +166,7 @@ export default function StatisticsReport() {
           vehicleId: task.vehicleId,
           plateNumber: task.vehicle.plateNumber,
           taskCount: 0,
+          inProgressCount: 0,
           completedCount: 0,
           totalDistance: 0,
           totalFreight: 0,
@@ -155,8 +177,15 @@ export default function StatisticsReport() {
       s.taskCount += 1;
       s.totalDistance += task.estimatedDistance || 0;
       s.totalFreight += task.order.freight || 0;
-      if (task.status === 'completed') {
+
+      const isSigned = task.status === 'completed' && task.proofImageUrl;
+      const hasDeliveryDone = task.nodes.some(
+        (n) => n.nodeType === 'delivery_done'
+      );
+      if (isSigned) {
         s.completedCount += 1;
+      } else if (hasDeliveryDone) {
+        s.inProgressCount += 1;
       }
     }
 
@@ -186,14 +215,21 @@ export default function StatisticsReport() {
       sub: '不含已取消',
     },
     {
-      label: '已完成数',
-      value: stats.completedOrders,
-      icon: CheckCircle2,
-      color: 'from-success-500 to-success-600',
-      sub: `完成率 ${overallCompletionRate}%`,
+      label: '进行中',
+      value: stats.inProgressOrders,
+      icon: Loader2,
+      color: 'from-warning-500 to-warning-600',
+      sub: '已送达待签收',
     },
     {
-      label: '已完成运费',
+      label: '已签收完成',
+      value: stats.completedOrders,
+      icon: FileCheck,
+      color: 'from-success-500 to-success-600',
+      sub: `签收率 ${overallCompletionRate}%`,
+    },
+    {
+      label: '已签收运费',
       value: formatMoney(stats.totalFreight),
       icon: DollarSign,
       color: 'from-accent-500 to-accent-600',
@@ -224,14 +260,16 @@ export default function StatisticsReport() {
             : c.customerName,
         fullName: c.customerName,
         订单数: c.orderCount,
-        已完成: c.completedCount,
+        进行中: c.inProgressCount,
+        已签收: c.completedCount,
         运费: Math.round(c.totalFreight),
       }));
     }
     return byVehicleStats.map((v) => ({
       name: v.plateNumber,
       任务数: v.taskCount,
-      已完成: v.completedCount,
+      进行中: v.inProgressCount,
+      已签收: v.completedCount,
       运费: Math.round(v.totalFreight),
     }));
   }, [activeTab, byCustomerStats, byVehicleStats]);
@@ -273,7 +311,7 @@ export default function StatisticsReport() {
             </span>
           </div>
           <p className="text-sm text-gray-500 mt-1">
-            基于当前订单和任务数据实时计算，调度后自动更新
+            按签收完成口径统计：需上传签收凭证才算完成，已送达未签收算进行中
           </p>
         </div>
         <div className="flex gap-2">
@@ -294,7 +332,7 @@ export default function StatisticsReport() {
         </div>
       </div>
 
-      <div className="grid grid-cols-5 gap-5">
+      <div className="grid grid-cols-6 gap-5">
         {statCards.map((stat, idx) => {
           const Icon = stat.icon;
           return (
@@ -417,7 +455,12 @@ export default function StatisticsReport() {
                             radius={[4, 4, 0, 0]}
                           />
                           <Bar
-                            dataKey="已完成"
+                            dataKey="进行中"
+                            fill="#F59E0B"
+                            radius={[4, 4, 0, 0]}
+                          />
+                          <Bar
+                            dataKey="已签收"
                             fill="#10B981"
                             radius={[4, 4, 0, 0]}
                           />
@@ -430,7 +473,12 @@ export default function StatisticsReport() {
                             radius={[4, 4, 0, 0]}
                           />
                           <Bar
-                            dataKey="已完成"
+                            dataKey="进行中"
+                            fill="#F59E0B"
+                            radius={[4, 4, 0, 0]}
+                          />
+                          <Bar
+                            dataKey="已签收"
                             fill="#10B981"
                             radius={[4, 4, 0, 0]}
                           />
@@ -496,121 +544,115 @@ export default function StatisticsReport() {
                       <>
                         <th className="table-header">客户名称</th>
                         <th className="table-header">订单数</th>
-                        <th className="table-header">已完成</th>
                         <th className="table-header">进行中</th>
-                        <th className="table-header">完成率</th>
+                        <th className="table-header">已签收</th>
+                        <th className="table-header">签收率</th>
                         <th className="table-header">总运费</th>
                       </>
                     ) : (
                       <>
                         <th className="table-header">车牌号</th>
                         <th className="table-header">任务数</th>
-                        <th className="table-header">已完成</th>
                         <th className="table-header">进行中</th>
+                        <th className="table-header">已签收</th>
                         <th className="table-header">总里程</th>
                         <th className="table-header">总运费</th>
-                        <th className="table-header">完成率</th>
+                        <th className="table-header">签收率</th>
                       </>
                     )}
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-gray-50">
                   {activeTab === 'customer'
-                    ? byCustomerStats.map((c) => {
-                        const inProgress = c.orderCount - c.completedCount;
-                        return (
-                          <tr
-                            key={c.customerId || c.customerName}
-                            className="hover:bg-gray-50/50 transition-colors"
-                          >
-                            <td className="table-cell font-medium">
-                              {c.customerName}
-                            </td>
-                            <td className="table-cell">
-                              <span className="font-semibold text-gray-800">
-                                {c.orderCount}
-                              </span>
-                            </td>
-                            <td className="table-cell">
-                              <span className="text-success-600 font-medium">
-                                {c.completedCount}
-                              </span>
-                            </td>
-                            <td className="table-cell">
-                              <span className="text-warning-600">
-                                {inProgress > 0 ? inProgress : '-'}
-                              </span>
-                            </td>
-                            <td className="table-cell">
-                              <div className="flex items-center gap-2">
-                                <div className="w-20 h-1.5 bg-gray-100 rounded-full overflow-hidden">
-                                  <div
-                                    className="h-full bg-success-500 rounded-full"
-                                    style={{
-                                      width: `${Math.min(c.completionRate, 100)}%`,
-                                    }}
-                                  />
-                                </div>
-                                <span className="text-xs font-medium text-gray-600 w-10">
-                                  {c.completionRate}%
-                                </span>
+                    ? byCustomerStats.map((c) => (
+                        <tr
+                          key={c.customerId || c.customerName}
+                          className="hover:bg-gray-50/50 transition-colors"
+                        >
+                          <td className="table-cell font-medium">
+                            {c.customerName}
+                          </td>
+                          <td className="table-cell">
+                            <span className="font-semibold text-gray-800">
+                              {c.orderCount}
+                            </span>
+                          </td>
+                          <td className="table-cell">
+                            <span className="text-warning-600 font-medium">
+                              {c.inProgressCount > 0 ? c.inProgressCount : '-'}
+                            </span>
+                          </td>
+                          <td className="table-cell">
+                            <span className="text-success-600 font-medium">
+                              {c.completedCount > 0 ? c.completedCount : '-'}
+                            </span>
+                          </td>
+                          <td className="table-cell">
+                            <div className="flex items-center gap-2">
+                              <div className="w-20 h-1.5 bg-gray-100 rounded-full overflow-hidden">
+                                <div
+                                  className="h-full bg-success-500 rounded-full"
+                                  style={{
+                                    width: `${Math.min(c.completionRate, 100)}%`,
+                                  }}
+                                />
                               </div>
-                            </td>
-                            <td className="table-cell font-semibold text-accent-600">
-                              {formatMoney(c.totalFreight)}
-                            </td>
-                          </tr>
-                        );
-                      })
-                    : byVehicleStats.map((v) => {
-                        const inProgress = v.taskCount - v.completedCount;
-                        return (
-                          <tr
-                            key={v.vehicleId}
-                            className="hover:bg-gray-50/50 transition-colors"
-                          >
-                            <td className="table-cell font-medium">
-                              {v.plateNumber}
-                            </td>
-                            <td className="table-cell">
-                              <span className="font-semibold text-gray-800">
-                                {v.taskCount}
+                              <span className="text-xs font-medium text-gray-600 w-10">
+                                {c.completionRate}%
                               </span>
-                            </td>
-                            <td className="table-cell">
-                              <span className="text-success-600 font-medium">
-                                {v.completedCount}
-                              </span>
-                            </td>
-                            <td className="table-cell">
-                              <span className="text-warning-600">
-                                {inProgress > 0 ? inProgress : '-'}
-                              </span>
-                            </td>
-                            <td className="table-cell">
-                              {formatDistance(v.totalDistance)}
-                            </td>
-                            <td className="table-cell font-semibold text-accent-600">
-                              {formatMoney(v.totalFreight)}
-                            </td>
-                            <td className="table-cell">
-                              <div className="flex items-center gap-2">
-                                <div className="w-20 h-1.5 bg-gray-100 rounded-full overflow-hidden">
-                                  <div
-                                    className="h-full bg-success-500 rounded-full"
-                                    style={{
-                                      width: `${Math.min(v.completionRate, 100)}%`,
-                                    }}
-                                  />
-                                </div>
-                                <span className="text-xs font-medium text-gray-600 w-10">
-                                  {v.completionRate}%
-                                </span>
+                            </div>
+                          </td>
+                          <td className="table-cell font-semibold text-accent-600">
+                            {formatMoney(c.totalFreight)}
+                          </td>
+                        </tr>
+                      ))
+                    : byVehicleStats.map((v) => (
+                        <tr
+                          key={v.vehicleId}
+                          className="hover:bg-gray-50/50 transition-colors"
+                        >
+                          <td className="table-cell font-medium">
+                            {v.plateNumber}
+                          </td>
+                          <td className="table-cell">
+                            <span className="font-semibold text-gray-800">
+                              {v.taskCount}
+                            </span>
+                          </td>
+                          <td className="table-cell">
+                            <span className="text-warning-600 font-medium">
+                              {v.inProgressCount > 0 ? v.inProgressCount : '-'}
+                            </span>
+                          </td>
+                          <td className="table-cell">
+                            <span className="text-success-600 font-medium">
+                              {v.completedCount > 0 ? v.completedCount : '-'}
+                            </span>
+                          </td>
+                          <td className="table-cell">
+                            {formatDistance(v.totalDistance)}
+                          </td>
+                          <td className="table-cell font-semibold text-accent-600">
+                            {formatMoney(v.totalFreight)}
+                          </td>
+                          <td className="table-cell">
+                            <div className="flex items-center gap-2">
+                              <div className="w-20 h-1.5 bg-gray-100 rounded-full overflow-hidden">
+                                <div
+                                  className="h-full bg-success-500 rounded-full"
+                                  style={{
+                                    width: `${Math.min(v.completionRate, 100)}%`,
+                                  }}
+                                />
                               </div>
-                            </td>
-                          </tr>
-                        );
-                      })}
+                              <span className="text-xs font-medium text-gray-600 w-10">
+                                {v.completionRate}%
+                              </span>
+                            </div>
+                          </td>
+                        </tr>
+                      ))}
                 </tbody>
               </table>
             </div>

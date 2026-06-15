@@ -13,16 +13,32 @@ import {
   Car,
   X,
   Save,
+  LayoutGrid,
+  CalendarDays,
+  ChevronLeft,
+  ChevronRight,
+  Package,
+  Clock,
+  CheckCircle2,
 } from 'lucide-react';
 import { useVehicleStore } from '@/stores/vehicleStore';
+import { useTaskStore } from '@/stores/taskStore';
 import {
   VEHICLE_TYPE_LABELS,
   VEHICLE_STATUS_LABELS,
   VEHICLE_STATUS_COLORS,
   VEHICLE_TYPE_OPTIONS,
+  TASK_STATUS_COLORS,
+  TASK_STATUS_LABELS,
 } from '@/utils/constants';
-import { formatDate, formatWeight, formatPhone } from '@/utils/format';
-import type { Vehicle, VehicleStatus, VehicleType } from '@/types';
+import {
+  formatDate,
+  formatWeight,
+  formatPhone,
+  formatDateTime,
+  formatDistance,
+} from '@/utils/format';
+import type { Vehicle, VehicleStatus, VehicleType, DispatchTask } from '@/types';
 
 interface AddVehicleForm {
   plateNumber: string;
@@ -46,12 +62,19 @@ const initialVehicleForm: AddVehicleForm = {
 
 export default function VehicleBoard() {
   const vehicles = useVehicleStore((s) => s.vehicles);
+  const tasks = useTaskStore((s) => s.tasks);
   const updateVehicle = useVehicleStore((s) => s.updateVehicle);
 
   const [searchQuery, setSearchQuery] = useState('');
   const [typeFilter, setTypeFilter] = useState<string>('');
   const [minCapacity, setMinCapacity] = useState<string>('');
   const [statusFilter, setStatusFilter] = useState<VehicleStatus | ''>('');
+  const [viewMode, setViewMode] = useState<'board' | 'schedule'>('board');
+  const [scheduleStartDate, setScheduleStartDate] = useState(() => {
+    const d = new Date();
+    d.setHours(0, 0, 0, 0);
+    return d.toISOString().slice(0, 10);
+  });
 
   const [showAddModal, setShowAddModal] = useState(false);
   const [vehicleForm, setVehicleForm] = useState<AddVehicleForm>({
@@ -79,6 +102,68 @@ export default function VehicleBoard() {
   const maintenanceVehicles = filteredVehicles.filter(
     (v) => v.status === 'maintenance'
   );
+
+  const scheduleDates = useMemo(() => {
+    const dates: string[] = [];
+    const start = new Date(scheduleStartDate);
+    for (let i = 0; i < 7; i++) {
+      const d = new Date(start);
+      d.setDate(d.getDate() + i);
+      dates.push(d.toISOString().slice(0, 10));
+    }
+    return dates;
+  }, [scheduleStartDate]);
+
+  const vehicleTasksByDate = useMemo(() => {
+    const map = new Map<string, Map<string, DispatchTask[]>>();
+    for (const vehicle of filteredVehicles) {
+      const dateMap = new Map<string, DispatchTask[]>();
+      for (const date of scheduleDates) {
+        dateMap.set(date, []);
+      }
+      map.set(vehicle.id, dateMap);
+    }
+    for (const task of tasks) {
+      const dateMap = map.get(task.vehicleId);
+      if (!dateMap) continue;
+      const taskDate = task.createdAt.slice(0, 10);
+      if (dateMap.has(taskDate)) {
+        dateMap.get(taskDate)!.push(task);
+      }
+    }
+    return map;
+  }, [filteredVehicles, tasks, scheduleDates]);
+
+  const goToPrevWeek = () => {
+    const d = new Date(scheduleStartDate);
+    d.setDate(d.getDate() - 7);
+    setScheduleStartDate(d.toISOString().slice(0, 10));
+  };
+
+  const goToNextWeek = () => {
+    const d = new Date(scheduleStartDate);
+    d.setDate(d.getDate() + 7);
+    setScheduleStartDate(d.toISOString().slice(0, 10));
+  };
+
+  const goToToday = () => {
+    const d = new Date();
+    d.setHours(0, 0, 0, 0);
+    setScheduleStartDate(d.toISOString().slice(0, 10));
+  };
+
+  const formatWeekDay = (dateStr: string) => {
+    const days = ['周日', '周一', '周二', '周三', '周四', '周五', '周六'];
+    const d = new Date(dateStr);
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+    const isToday = dateStr === today.toISOString().slice(0, 10);
+    return {
+      day: days[d.getDay()],
+      date: `${d.getMonth() + 1}/${d.getDate()}`,
+      isToday,
+    };
+  };
 
   const handleVehicleTypeChange = (type: VehicleType) => {
     const option = VEHICLE_TYPE_OPTIONS.find((o) => o.value === type);
@@ -239,13 +324,39 @@ export default function VehicleBoard() {
             实时监控车辆状态，统一调度管理
           </p>
         </div>
-        <button
-          onClick={() => setShowAddModal(true)}
-          className="btn-primary gap-2"
-        >
-          <Plus className="w-4 h-4" />
-          添加车辆
-        </button>
+        <div className="flex items-center gap-3">
+          <div className="flex gap-1 p-1 bg-gray-100 rounded-lg">
+            <button
+              onClick={() => setViewMode('board')}
+              className={`px-4 py-1.5 rounded-md text-sm font-medium transition-all flex items-center gap-1.5 ${
+                viewMode === 'board'
+                  ? 'bg-white text-primary-700 shadow-sm'
+                  : 'text-gray-500 hover:text-gray-700'
+              }`}
+            >
+              <LayoutGrid className="w-4 h-4" />
+              看板视图
+            </button>
+            <button
+              onClick={() => setViewMode('schedule')}
+              className={`px-4 py-1.5 rounded-md text-sm font-medium transition-all flex items-center gap-1.5 ${
+                viewMode === 'schedule'
+                  ? 'bg-white text-primary-700 shadow-sm'
+                  : 'text-gray-500 hover:text-gray-700'
+              }`}
+            >
+              <CalendarDays className="w-4 h-4" />
+              排班视图
+            </button>
+          </div>
+          <button
+            onClick={() => setShowAddModal(true)}
+            className="btn-primary gap-2"
+          >
+            <Plus className="w-4 h-4" />
+            添加车辆
+          </button>
+        </div>
       </div>
 
       <div className="card p-4 flex-shrink-0">
@@ -311,32 +422,225 @@ export default function VehicleBoard() {
         </div>
       </div>
 
-      <div className="grid grid-cols-3 gap-5 flex-1 min-h-0">
-        <BoardColumn
-          title="空闲车辆"
-          vehicles={idleVehicles}
-          status="idle"
-          icon={Car}
-          iconColor="text-success-600"
-          bgColor="bg-success-50"
-        />
-        <BoardColumn
-          title="在途车辆"
-          vehicles={transitVehicles}
-          status="transit"
-          icon={Truck}
-          iconColor="text-primary-600"
-          bgColor="bg-primary-50"
-        />
-        <BoardColumn
-          title="维修中"
-          vehicles={maintenanceVehicles}
-          status="maintenance"
-          icon={Wrench}
-          iconColor="text-danger-600"
-          bgColor="bg-danger-50"
-        />
-      </div>
+      {viewMode === 'board' ? (
+        <div className="grid grid-cols-3 gap-5 flex-1 min-h-0">
+          <BoardColumn
+            title="空闲车辆"
+            vehicles={idleVehicles}
+            status="idle"
+            icon={Car}
+            iconColor="text-success-600"
+            bgColor="bg-success-50"
+          />
+          <BoardColumn
+            title="在途车辆"
+            vehicles={transitVehicles}
+            status="transit"
+            icon={Truck}
+            iconColor="text-primary-600"
+            bgColor="bg-primary-50"
+          />
+          <BoardColumn
+            title="维修中"
+            vehicles={maintenanceVehicles}
+            status="maintenance"
+            icon={Wrench}
+            iconColor="text-danger-600"
+            bgColor="bg-danger-50"
+          />
+        </div>
+      ) : (
+        <div className="flex-1 min-h-0 flex flex-col">
+          <div className="card p-4 mb-4 flex items-center justify-between flex-shrink-0">
+            <div className="flex items-center gap-3">
+              <button
+                onClick={goToPrevWeek}
+                className="btn-ghost p-2"
+                title="上一周"
+              >
+                <ChevronLeft className="w-5 h-5" />
+              </button>
+              <button
+                onClick={goToToday}
+                className="btn-secondary text-sm px-3 py-1.5"
+              >
+                今天
+              </button>
+              <button
+                onClick={goToNextWeek}
+                className="btn-ghost p-2"
+                title="下一周"
+              >
+                <ChevronRight className="w-5 h-5" />
+              </button>
+              <span className="text-sm font-medium text-gray-700 ml-2">
+                {formatDate(scheduleDates[0])} ~ {formatDate(scheduleDates[6])}
+              </span>
+            </div>
+            <div className="flex items-center gap-4 text-xs text-gray-500">
+              <span className="flex items-center gap-1">
+                <span className="w-3 h-3 rounded bg-success-100 border border-success-300" />
+                空闲可派
+              </span>
+              <span className="flex items-center gap-1">
+                <span className="w-3 h-3 rounded bg-primary-100 border border-primary-300" />
+                有任务
+              </span>
+              <span className="flex items-center gap-1">
+                <span className="w-3 h-3 rounded bg-success-500" />
+                已完成
+              </span>
+            </div>
+          </div>
+
+          <div className="card flex-1 min-h-0 overflow-hidden flex flex-col">
+            <div className="overflow-x-auto flex-1">
+              <table className="w-full h-full">
+                <thead className="sticky top-0 z-10 bg-white">
+                  <tr className="border-b border-gray-100">
+                    <th className="px-4 py-3 text-left text-sm font-semibold text-gray-700 bg-gray-50 w-48 sticky left-0 z-20">
+                      车辆信息
+                    </th>
+                    {scheduleDates.map((date) => {
+                      const { day, date: dateLabel, isToday } = formatWeekDay(date);
+                      return (
+                        <th
+                          key={date}
+                          className={`px-3 py-3 text-center text-sm font-semibold min-w-36 ${
+                            isToday ? 'bg-primary-50 text-primary-700' : 'bg-gray-50 text-gray-700'
+                          }`}
+                        >
+                          <div className="text-xs text-gray-500 font-normal">{day}</div>
+                          <div className={isToday ? 'text-primary-700' : ''}>{dateLabel}</div>
+                          {isToday && (
+                            <span className="inline-block mt-1 px-2 py-0.5 bg-primary-500 text-white text-[10px] rounded-full">
+                              今天
+                            </span>
+                          )}
+                        </th>
+                      );
+                    })}
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-gray-50">
+                  {filteredVehicles.map((vehicle) => {
+                    const dateMap = vehicleTasksByDate.get(vehicle.id);
+                    return (
+                      <tr key={vehicle.id} className="hover:bg-gray-50/30 transition-colors">
+                        <td className="px-4 py-3 bg-white sticky left-0 z-10">
+                          <div className="flex items-center gap-3">
+                            <div
+                              className={`w-9 h-9 rounded-lg flex items-center justify-center flex-shrink-0 ${
+                                vehicle.status === 'idle'
+                                  ? 'bg-success-50 text-success-600'
+                                  : vehicle.status === 'transit'
+                                  ? 'bg-primary-50 text-primary-600'
+                                  : 'bg-danger-50 text-danger-600'
+                              }`}
+                            >
+                              <Truck className="w-4 h-4" />
+                            </div>
+                            <div className="min-w-0">
+                              <p className="font-semibold text-gray-900 text-sm">
+                                {vehicle.plateNumber}
+                              </p>
+                              <p className="text-xs text-gray-500">
+                                {VEHICLE_TYPE_LABELS[vehicle.vehicleType]} · {vehicle.driverName || '未绑定司机'}
+                              </p>
+                            </div>
+                          </div>
+                        </td>
+                        {scheduleDates.map((date) => {
+                          const dayTasks = dateMap?.get(date) || [];
+                          const { isToday } = formatWeekDay(date);
+                          return (
+                            <td
+                              key={date}
+                              className={`px-2 py-2 align-top ${
+                                isToday ? 'bg-primary-50/30' : ''
+                              }`}
+                            >
+                              {dayTasks.length === 0 ? (
+                                <div className="min-h-16 flex items-center justify-center">
+                                  <div className="flex flex-col items-center gap-1 py-2">
+                                    <CheckCircle2 className="w-4 h-4 text-success-400" />
+                                    <span className="text-[10px] text-success-600 font-medium">
+                                      空闲可派
+                                    </span>
+                                  </div>
+                                </div>
+                              ) : (
+                                <div className="space-y-1.5">
+                                  {dayTasks.map((task) => {
+                                    const isCompleted =
+                                      task.status === 'completed' && task.proofImageUrl;
+                                    const isInProgress = task.nodes.some(
+                                      (n) => n.nodeType === 'delivery_done'
+                                    ) && !isCompleted;
+                                    return (
+                                      <div
+                                        key={task.id}
+                                        className={`p-2 rounded-lg text-xs ${
+                                          isCompleted
+                                            ? 'bg-success-100 border border-success-200'
+                                            : isInProgress
+                                            ? 'bg-warning-50 border border-warning-200'
+                                            : 'bg-primary-50 border border-primary-200'
+                                        }`}
+                                      >
+                                        <div className="font-medium text-gray-800 flex items-center gap-1 mb-1">
+                                          <Package className="w-3 h-3 flex-shrink-0" />
+                                          <span className="truncate">{task.order.orderNo}</span>
+                                        </div>
+                                        <p className="text-[10px] text-gray-500 truncate">
+                                          {task.order.customerName}
+                                        </p>
+                                        <div className="flex items-center gap-1 mt-1 text-[10px] text-gray-500">
+                                          <Clock className="w-3 h-3 flex-shrink-0" />
+                                          <span>{formatDistance(task.estimatedDistance)}</span>
+                                        </div>
+                                        <div className="mt-1">
+                                          <span
+                                            className={`inline-block px-1.5 py-0.5 rounded text-[10px] font-medium ${
+                                              isCompleted
+                                                ? 'bg-success-500 text-white'
+                                                : isInProgress
+                                                ? 'bg-warning-500 text-white'
+                                                : task.status === 'pending'
+                                                ? 'bg-gray-500 text-white'
+                                                : task.status === 'loading'
+                                                ? 'bg-warning-500 text-white'
+                                                : task.status === 'transit'
+                                                ? 'bg-primary-500 text-white'
+                                                : task.status === 'delivering'
+                                                ? 'bg-warning-500 text-white'
+                                                : 'bg-danger-500 text-white'
+                                            }`}
+                                          >
+                                            {isCompleted
+                                              ? '已完成'
+                                              : isInProgress
+                                              ? '待签收'
+                                              : TASK_STATUS_LABELS[task.status]}
+                                          </span>
+                                        </div>
+                                      </div>
+                                    );
+                                  })}
+                                </div>
+                              )}
+                            </td>
+                          );
+                        })}
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            </div>
+          </div>
+        </div>
+      )}
 
       {showAddModal && (
         <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 animate-fade-in">

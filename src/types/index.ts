@@ -96,6 +96,7 @@ export interface CustomerStat {
   customerId: string;
   customerName: string;
   orderCount: number;
+  inProgressCount: number;
   completedCount: number;
   totalFreight: number;
   completionRate: number;
@@ -105,6 +106,7 @@ export interface VehicleStat {
   vehicleId: string;
   plateNumber: string;
   taskCount: number;
+  inProgressCount: number;
   completedCount: number;
   totalDistance: number;
   totalFreight: number;
