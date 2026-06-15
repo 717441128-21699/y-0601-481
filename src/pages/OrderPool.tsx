@@ -15,22 +15,30 @@ import {
   User,
   Phone,
   Calendar,
+  Route,
+  Clock,
+  CheckCircle2,
 } from 'lucide-react';
 import { useOrderStore } from '@/stores/orderStore';
 import { useVehicleStore } from '@/stores/vehicleStore';
+import { useTaskStore } from '@/stores/taskStore';
+import { useToast } from '@/components/Toast/Toast';
 import { mockCustomers } from '@/mock/customers';
 import {
   ORDER_STATUS_LABELS,
   ORDER_STATUS_COLORS,
+  VEHICLE_TYPE_LABELS,
 } from '@/utils/constants';
 import {
   formatDateTime,
   formatMoney,
   formatWeight,
   formatVolume,
+  formatDistance,
+  formatDuration,
 } from '@/utils/format';
 import { exportOrderList } from '@/utils/export';
-import type { Order, OrderStatus } from '@/types';
+import type { Order, OrderStatus, DispatchTask } from '@/types';
 
 interface BatchOrderForm {
   customerId: string;
@@ -70,6 +78,8 @@ export default function OrderPool() {
   const updateOrder = useOrderStore((s) => s.updateOrder);
   const vehicles = useVehicleStore((s) => s.vehicles);
   const idleVehicles = vehicles.filter((v) => v.status === 'idle');
+  const createTask = useTaskStore((s) => s.createTask);
+  const { showToast } = useToast();
 
   const [searchQuery, setSearchQuery] = useState('');
   const [customerFilter, setCustomerFilter] = useState<string>('');
@@ -91,6 +101,7 @@ export default function OrderPool() {
   const [showAssignModal, setShowAssignModal] = useState(false);
   const [assignOrderId, setAssignOrderId] = useState<string>('');
   const [selectedVehicleId, setSelectedVehicleId] = useState<string>('');
+  const [assignSuccessTask, setAssignSuccessTask] = useState<DispatchTask | null>(null);
 
   const filteredOrders = useMemo(() => {
     return orders.filter((order) => {
@@ -201,18 +212,35 @@ export default function OrderPool() {
   const handleAssign = (orderId: string) => {
     setAssignOrderId(orderId);
     setSelectedVehicleId('');
+    setAssignSuccessTask(null);
     setShowAssignModal(true);
   };
 
-  const handleAssignConfirm = () => {
-    if (!selectedVehicleId) return;
-    const vehicle = idleVehicles.find((v) => v.id === selectedVehicleId);
-    if (!vehicle) return;
+  const currentAssignOrder = orders.find((o) => o.id === assignOrderId);
+  const selectedVehicle = idleVehicles.find((v) => v.id === selectedVehicleId);
 
-    updateOrder(assignOrderId, { status: 'assigned' as OrderStatus });
-    setShowAssignModal(false);
-    setAssignOrderId('');
-    setSelectedVehicleId('');
+  const handleAssignConfirm = () => {
+    if (!selectedVehicleId || !assignOrderId) return;
+    const order = orders.find((o) => o.id === assignOrderId);
+    const vehicle = idleVehicles.find((v) => v.id === selectedVehicleId);
+
+    if (!order || !vehicle) return;
+
+    if (order.weight > vehicle.capacity) {
+      showToast(
+        `超重！订单重量 ${formatWeight(order.weight)} 超过车辆载重 ${formatWeight(vehicle.capacity)}`,
+        'error'
+      );
+      return;
+    }
+
+    const task = createTask(assignOrderId, selectedVehicleId);
+    if (task) {
+      setAssignSuccessTask(task);
+      showToast(`分配成功！任务已发送给 ${task.driverName}`, 'success');
+    } else {
+      showToast('任务创建失败，请检查司机信息是否完整', 'error');
+    }
   };
 
   return (
@@ -1024,61 +1052,328 @@ export default function OrderPool() {
       )}
 
       {showAssignModal && (
-        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 animate-fade-in">
-          <div className="bg-white rounded-xl shadow-2xl w-[500px] overflow-hidden animate-slide-in">
-            <div className="px-6 py-4 border-b border-gray-100 flex items-center justify-between">
-              <h2 className="text-lg font-semibold text-gray-900">分配车辆</h2>
-              <button
-                onClick={() => {
-                  setShowAssignModal(false);
-                  setAssignOrderId('');
-                  setSelectedVehicleId('');
-                }}
-                className="p-1 rounded-md hover:bg-gray-100 text-gray-500"
-              >
-                <X className="w-5 h-5" />
-              </button>
-            </div>
-            <div className="p-6">
-              <label className="label">选择空闲车辆</label>
-              <select
-                className="input"
-                value={selectedVehicleId}
-                onChange={(e) => setSelectedVehicleId(e.target.value)}
-              >
-                <option value="">请选择车辆</option>
-                {idleVehicles.map((v) => (
-                  <option key={v.id} value={v.id}>
-                    {v.plateNumber} - {v.driverName} ({v.capacity}吨)
-                  </option>
-                ))}
-              </select>
-              {idleVehicles.length === 0 && (
-                <p className="text-xs text-danger-500 mt-2">
-                  暂无空闲车辆可用
-                </p>
-              )}
-            </div>
-            <div className="px-6 py-4 border-t border-gray-100 bg-gray-50/50 flex items-center justify-end gap-2">
-              <button
-                onClick={() => {
-                  setShowAssignModal(false);
-                  setAssignOrderId('');
-                  setSelectedVehicleId('');
-                }}
-                className="btn-secondary"
-              >
-                取消
-              </button>
-              <button
-                onClick={handleAssignConfirm}
-                className="btn-primary gap-2"
-                disabled={!selectedVehicleId}
-              >
-                <Truck className="w-4 h-4" />
-                确认分配
-              </button>
-            </div>
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4 animate-fade-in">
+          <div className="bg-white rounded-xl shadow-2xl w-full max-w-xl max-h-[85vh] overflow-hidden flex flex-col animate-slide-in">
+            {assignSuccessTask ? (
+              <>
+                <div className="px-6 py-4 border-b border-gray-100 flex items-center justify-between bg-success-50/50">
+                  <div className="flex items-center gap-2">
+                    <CheckCircle2 className="w-6 h-6 text-success-500" />
+                    <h2 className="text-lg font-semibold text-gray-900">派车成功</h2>
+                  </div>
+                  <button
+                    onClick={() => {
+                      setShowAssignModal(false);
+                      setAssignOrderId('');
+                      setSelectedVehicleId('');
+                      setAssignSuccessTask(null);
+                    }}
+                    className="p-1 rounded-md hover:bg-gray-100 text-gray-500"
+                  >
+                    <X className="w-5 h-5" />
+                  </button>
+                </div>
+                <div className="flex-1 overflow-y-auto p-6 space-y-5 scrollbar-thin">
+                  <div className="space-y-3">
+                    <h3 className="text-sm font-semibold text-gray-700 flex items-center gap-2">
+                      <Package className="w-4 h-4 text-primary-500" />
+                      运单信息
+                    </h3>
+                    <div className="grid grid-cols-2 gap-3 bg-gray-50 rounded-lg p-4">
+                      <div>
+                        <p className="text-xs text-gray-500">运单号</p>
+                        <p className="text-sm font-medium text-primary-600 mt-0.5">
+                          {assignSuccessTask.order.orderNo}
+                        </p>
+                      </div>
+                      <div>
+                        <p className="text-xs text-gray-500">客户</p>
+                        <p className="text-sm font-medium mt-0.5">
+                          {assignSuccessTask.order.customerName}
+                        </p>
+                      </div>
+                      <div>
+                        <p className="text-xs text-gray-500">货物</p>
+                        <p className="text-sm mt-0.5">
+                          {assignSuccessTask.order.goodsName}
+                        </p>
+                      </div>
+                      <div>
+                        <p className="text-xs text-gray-500">运费</p>
+                        <p className="text-sm font-semibold text-accent-600 mt-0.5">
+                          {formatMoney(assignSuccessTask.order.freight)}
+                        </p>
+                      </div>
+                    </div>
+                  </div>
+
+                  <div className="space-y-3">
+                    <h3 className="text-sm font-semibold text-gray-700 flex items-center gap-2">
+                      <MapPin className="w-4 h-4 text-success-500" />
+                      装货信息
+                    </h3>
+                    <div className="bg-gray-50 rounded-lg p-4 space-y-2">
+                      <div>
+                        <p className="text-xs text-gray-500">装货地址</p>
+                        <p className="text-sm mt-0.5">
+                          {assignSuccessTask.order.pickupAddress}
+                        </p>
+                      </div>
+                      <div className="grid grid-cols-2 gap-3">
+                        <div>
+                          <p className="text-xs text-gray-500">联系人</p>
+                          <p className="text-sm font-medium mt-0.5">
+                            {assignSuccessTask.order.pickupContact}
+                          </p>
+                        </div>
+                        <div>
+                          <p className="text-xs text-gray-500">联系电话</p>
+                          <p className="text-sm mt-0.5">
+                            {assignSuccessTask.order.pickupPhone}
+                          </p>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+
+                  <div className="space-y-3">
+                    <h3 className="text-sm font-semibold text-gray-700 flex items-center gap-2">
+                      <MapPin className="w-4 h-4 text-danger-500" />
+                      卸货信息
+                    </h3>
+                    <div className="bg-gray-50 rounded-lg p-4 space-y-2">
+                      <div>
+                        <p className="text-xs text-gray-500">卸货地址</p>
+                        <p className="text-sm mt-0.5">
+                          {assignSuccessTask.order.deliveryAddress}
+                        </p>
+                      </div>
+                      <div className="grid grid-cols-2 gap-3">
+                        <div>
+                          <p className="text-xs text-gray-500">联系人</p>
+                          <p className="text-sm font-medium mt-0.5">
+                            {assignSuccessTask.order.deliveryContact}
+                          </p>
+                        </div>
+                        <div>
+                          <p className="text-xs text-gray-500">联系电话</p>
+                          <p className="text-sm mt-0.5">
+                            {assignSuccessTask.order.deliveryPhone}
+                          </p>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+
+                  <div className="space-y-3">
+                    <h3 className="text-sm font-semibold text-gray-700 flex items-center gap-2">
+                      <Truck className="w-4 h-4 text-primary-500" />
+                      车辆与司机
+                    </h3>
+                    <div className="grid grid-cols-2 gap-3 bg-gray-50 rounded-lg p-4">
+                      <div>
+                        <p className="text-xs text-gray-500">车牌号</p>
+                        <p className="text-sm font-bold mt-0.5">
+                          {assignSuccessTask.vehicle.plateNumber}
+                        </p>
+                      </div>
+                      <div>
+                        <p className="text-xs text-gray-500">车型</p>
+                        <p className="text-sm mt-0.5">
+                          {VEHICLE_TYPE_LABELS[assignSuccessTask.vehicle.vehicleType]}
+                        </p>
+                      </div>
+                      <div>
+                        <p className="text-xs text-gray-500">司机姓名</p>
+                        <p className="text-sm font-medium mt-0.5">
+                          {assignSuccessTask.driverName}
+                        </p>
+                      </div>
+                      <div>
+                        <p className="text-xs text-gray-500">联系电话</p>
+                        <p className="text-sm mt-0.5">
+                          {assignSuccessTask.driverPhone}
+                        </p>
+                      </div>
+                    </div>
+                  </div>
+
+                  <div className="grid grid-cols-3 gap-3">
+                    <div className="bg-primary-50 rounded-lg p-4 text-center">
+                      <Route className="w-5 h-5 text-primary-500 mx-auto mb-1" />
+                      <p className="text-xs text-gray-500">预估里程</p>
+                      <p className="text-base font-bold text-primary-600 mt-0.5">
+                        {formatDistance(assignSuccessTask.estimatedDistance)}
+                      </p>
+                    </div>
+                    <div className="bg-gray-50 rounded-lg p-4 text-center">
+                      <Clock className="w-5 h-5 text-gray-500 mx-auto mb-1" />
+                      <p className="text-xs text-gray-500">预估时长</p>
+                      <p className="text-base font-bold text-gray-800 mt-0.5">
+                        {formatDuration(assignSuccessTask.estimatedDuration)}
+                      </p>
+                    </div>
+                    <div className="bg-accent-50 rounded-lg p-4 text-center">
+                      <Calendar className="w-5 h-5 text-accent-500 mx-auto mb-1" />
+                      <p className="text-xs text-gray-500">预计到达</p>
+                      <p className="text-sm font-bold text-accent-600 mt-0.5">
+                        {formatDateTime(assignSuccessTask.estimatedArrival)}
+                      </p>
+                    </div>
+                  </div>
+                </div>
+                <div className="px-6 py-4 border-t border-gray-100 bg-gray-50/50 flex items-center justify-end">
+                  <button
+                    onClick={() => {
+                      setShowAssignModal(false);
+                      setAssignOrderId('');
+                      setSelectedVehicleId('');
+                      setAssignSuccessTask(null);
+                    }}
+                    className="btn-primary"
+                  >
+                    完成
+                  </button>
+                </div>
+              </>
+            ) : (
+              <>
+                <div className="px-6 py-4 border-b border-gray-100 flex items-center justify-between">
+                  <h2 className="text-lg font-semibold text-gray-900">分配车辆</h2>
+                  <button
+                    onClick={() => {
+                      setShowAssignModal(false);
+                      setAssignOrderId('');
+                      setSelectedVehicleId('');
+                    }}
+                    className="p-1 rounded-md hover:bg-gray-100 text-gray-500"
+                  >
+                    <X className="w-5 h-5" />
+                  </button>
+                </div>
+                <div className="flex-1 overflow-y-auto p-6 space-y-5 scrollbar-thin">
+                  {currentAssignOrder && (
+                    <div className="space-y-3">
+                      <h3 className="text-sm font-semibold text-gray-700 flex items-center gap-2">
+                        <Package className="w-4 h-4 text-primary-500" />
+                        待分配订单
+                      </h3>
+                      <div className="bg-primary-50/50 border border-primary-100 rounded-lg p-4 space-y-2">
+                        <div className="flex items-center justify-between">
+                          <div>
+                            <span className="font-semibold text-gray-900">
+                              {currentAssignOrder.orderNo}
+                            </span>
+                            <span className={ORDER_STATUS_COLORS[currentAssignOrder.status] + ' ml-2'}>
+                              {ORDER_STATUS_LABELS[currentAssignOrder.status]}
+                            </span>
+                          </div>
+                          <span className="text-sm font-semibold text-accent-600">
+                            {formatMoney(currentAssignOrder.freight)}
+                          </span>
+                        </div>
+                        <p className="text-sm text-gray-600">
+                          {currentAssignOrder.customerName} · {currentAssignOrder.goodsName}
+                        </p>
+                        <div className="flex items-center gap-4 text-xs text-gray-500">
+                          <span>
+                            <MapPin className="w-3 h-3 text-success-500 inline mr-0.5" />
+                            {currentAssignOrder.pickupAddress.slice(0, 20)}
+                            {currentAssignOrder.pickupAddress.length > 20 && '...'}
+                          </span>
+                          <span>
+                            <MapPin className="w-3 h-3 text-danger-500 inline mr-0.5" />
+                            {currentAssignOrder.deliveryAddress.slice(0, 20)}
+                            {currentAssignOrder.deliveryAddress.length > 20 && '...'}
+                          </span>
+                        </div>
+                        <div className="text-xs text-gray-500">
+                          重量 {formatWeight(currentAssignOrder.weight)} · 体积 {formatVolume(currentAssignOrder.volume)}
+                        </div>
+                      </div>
+                    </div>
+                  )}
+
+                  <div className="space-y-3">
+                    <div className="flex items-center justify-between">
+                      <h3 className="text-sm font-semibold text-gray-700 flex items-center gap-2">
+                        <Truck className="w-4 h-4 text-success-500" />
+                        选择空闲车辆
+                      </h3>
+                      <span className="text-xs text-gray-500">{idleVehicles.length} 辆可用</span>
+                    </div>
+                    {idleVehicles.length === 0 ? (
+                      <div className="text-center py-8 text-gray-400">
+                        <Truck className="w-10 h-10 mx-auto mb-2 text-gray-300" />
+                        <p className="text-sm">暂无空闲车辆可用</p>
+                      </div>
+                    ) : (
+                      <div className="space-y-2 max-h-[280px] overflow-y-auto scrollbar-thin pr-1">
+                        {idleVehicles.map((v) => {
+                          const selected = selectedVehicleId === v.id;
+                          const overloaded = currentAssignOrder && currentAssignOrder.weight > v.capacity;
+                          return (
+                            <div
+                              key={v.id}
+                              onClick={() => !overloaded && setSelectedVehicleId(v.id)}
+                              className={`p-3 rounded-lg border-2 cursor-pointer transition-all ${
+                                selected
+                                  ? 'border-primary-500 bg-primary-50'
+                                  : overloaded
+                                  ? 'border-gray-100 bg-gray-50 opacity-50 cursor-not-allowed'
+                                  : 'border-gray-100 hover:border-primary-200 hover:bg-gray-50'
+                              }`}
+                            >
+                              <div className="flex items-start justify-between">
+                                <div>
+                                  <div className="flex items-center gap-2">
+                                    <span className="font-bold text-gray-900">{v.plateNumber}</span>
+                                    <span className="text-xs text-gray-500">
+                                      {VEHICLE_TYPE_LABELS[v.vehicleType]}
+                                    </span>
+                                  </div>
+                                  <p className="text-xs text-gray-500 mt-0.5">
+                                    载重 {formatWeight(v.capacity)}
+                                    {v.driverName && ` · 司机：${v.driverName}`}
+                                  </p>
+                                </div>
+                                {overloaded ? (
+                                  <span className="text-xs text-danger-600 bg-danger-50 px-2 py-0.5 rounded">
+                                    超重
+                                  </span>
+                                ) : selected ? (
+                                  <CheckCircle2 className="w-5 h-5 text-primary-500" />
+                                ) : null}
+                              </div>
+                            </div>
+                          );
+                        })}
+                      </div>
+                    )}
+                  </div>
+                </div>
+                <div className="px-6 py-4 border-t border-gray-100 bg-gray-50/50 flex items-center justify-end gap-2">
+                  <button
+                    onClick={() => {
+                      setShowAssignModal(false);
+                      setAssignOrderId('');
+                      setSelectedVehicleId('');
+                    }}
+                    className="btn-secondary"
+                  >
+                    取消
+                  </button>
+                  <button
+                    onClick={handleAssignConfirm}
+                    className="btn-primary gap-2"
+                    disabled={!selectedVehicleId}
+                  >
+                    <Truck className="w-4 h-4" />
+                    确认派车
+                  </button>
+                </div>
+              </>
+            )}
           </div>
         </div>
       )}

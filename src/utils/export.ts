@@ -23,6 +23,12 @@ function tasksToExportData(tasks: DispatchTask[]): any[] {
     '预估里程(km)': task.estimatedDistance,
     '预计到达': formatDateTime(task.estimatedArrival),
     '任务状态': TASK_STATUS_LABELS[task.status],
+    '是否签收': task.status === 'completed'
+      ? task.proofImageUrl
+        ? '已签收（有凭证）'
+        : '已签收'
+      : '未签收',
+    '签收凭证': task.proofImageUrl ? '有' : '无',
     '创建时间': formatDateTime(task.createdAt),
   }));
 }
